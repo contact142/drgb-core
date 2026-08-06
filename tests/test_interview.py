@@ -126,3 +126,22 @@ def test_render_shows_evidence_and_consequence(tmp_path):
     text = interview.render()
     assert "observed:" in text and "effect  :" in text
     assert "host can rewrite its own store" in text
+
+
+def test_multi_select_questions_accept_several_options():
+    """The money-lanes question is inherently multi-answer: a fleet has more
+    than one money lane, and forcing a single pick misrepresents it."""
+    scope = _Scope([_Lane("trading"), _Lane("haveno"), _Lane("docs")])
+    interview = Interview(build_questions(scope=scope))
+    interview.answer("money_lanes", "trading, haveno")
+    assert interview.resolved()["money_lanes"] == "trading, haveno"
+    with pytest.raises(ValueError):
+        interview.answer("money_lanes", "trading, not_a_lane")
+    with pytest.raises(ValueError):
+        interview.answer("money_lanes", "  ")
+
+
+def test_single_select_questions_still_reject_lists():
+    interview = Interview(build_questions(peers=["p"]))
+    with pytest.raises(ValueError):
+        interview.answer("braid_sharing", "share_attributed, isolate")

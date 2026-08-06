@@ -41,15 +41,17 @@ class Question:
     default: str = ""
     consequence: str = ""
     answer: str | None = None
+    multi: bool = False        # comma-separated selection of several options
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def _q(key, priority, question, observed, options, default, consequence):
+def _q(key, priority, question, observed, options, default, consequence,
+       multi=False):
     return Question(key=key, priority=priority, question=question,
                     observed=observed, options=list(options), default=default,
-                    consequence=consequence)
+                    consequence=consequence, multi=multi)
 
 
 def build_questions(*, scope=None, preflight: dict | None = None,
@@ -105,9 +107,11 @@ def build_questions(*, scope=None, preflight: dict | None = None,
             f"discovered {len(lanes)} lane(s): {', '.join(lanes[:8])}"
             + ("..." if len(lanes) > 8 else ""),
             lanes + ["none"], "all_treated_as_irreversible",
-            "Lanes you name here get irreversible actions barred at any "
-            "evidence level. Unnamed lanes are treated as irreversible until "
-            "you say otherwise."))
+            "Name every lane that touches money or takes irreversible action "
+            "(comma-separated). Named lanes get those actions barred at ANY "
+            "evidence level, permanently. Unnamed lanes stay restricted until "
+            "surveyed — the default treats ALL of them as irreversible, which "
+            "is safe but blocks everything.", multi=True))
         ineligible = [c.name for c in scope.lanes if not c.ceiling_eligible]
         if ineligible:
             questions.append(_q(
@@ -175,9 +179,15 @@ class Interview:
     def answer(self, key: str, value: str) -> None:
         for q in self.questions:
             if q.key == key:
-                if q.options and value not in q.options:
-                    raise ValueError(
-                        f"{value!r} is not an option for {key}: {q.options}")
+                if q.options:
+                    picks = ([v.strip() for v in value.split(",") if v.strip()]
+                             if q.multi else [value])
+                    if not picks:
+                        raise ValueError(f"{key}: no selection given")
+                    bad = [p for p in picks if p not in q.options]
+                    if bad:
+                        raise ValueError(
+                            f"{bad} not an option for {key}: {q.options}")
                 q.answer = value
                 self._persist()
                 return
