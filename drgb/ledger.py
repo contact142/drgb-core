@@ -47,14 +47,44 @@ def _hash_row(row: dict[str, Any], prev_hash: str) -> str:
 
 
 class Ledger:
-    """Append-only hash-chained ledger backed by a JSONL file."""
+    """Append-only hash-chained ledger backed by a JSONL file.
+
+    A hash chain alone does NOT detect tail truncation: dropping the most
+    recent rows leaves a shorter but internally valid chain, which would let
+    an actor delete its own failures and recover trust. A sidecar head file
+    (``<ledger>.head``) records the row count and last hash after every
+    append, so a shortened or rewound ledger is detectable. A missing head
+    file is itself unknown-not-permissive.
+    """
 
     def __init__(self, path: str | Path, cooldown_s: float = DEFAULT_COOLDOWN_S):
         self.path = Path(path)
+        self.head_path = self.path.with_suffix(self.path.suffix + ".head")
         self.cooldown_s = float(cooldown_s)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():
             self.path.touch()
+
+    # ---- head checkpoint ------------------------------------------------
+    def _read_head(self) -> dict[str, Any] | None:
+        try:
+            doc = json.loads(self.head_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return doc if isinstance(doc, dict) else None
+
+    def _write_head(self, count: int, last_hash: str) -> None:
+        tmp = self.head_path.with_suffix(self.head_path.suffix + ".tmp")
+        tmp.write_text(json.dumps({"count": int(count), "last_hash": last_hash},
+                                  sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp, self.head_path)
+
+    def _row_count(self) -> int:
+        try:
+            return sum(1 for line in self.path.open("r", encoding="utf-8")
+                       if line.strip())
+        except OSError:
+            return 0
 
     # ---- reading --------------------------------------------------------
     def rows(self) -> Iterator[dict[str, Any]]:
@@ -79,15 +109,34 @@ class Ledger:
         return prev
 
     def verify_chain(self) -> bool:
-        """True when every row's hash matches its content and predecessor."""
+        """True when the chain is internally valid AND matches its head.
+
+        Three failure modes are covered: mutated rows (hash mismatch),
+        reordered/removed interior rows (chain break), and TAIL TRUNCATION or
+        rewind (head mismatch). A head file that exists but disagrees, or is
+        absent for a non-empty ledger, fails closed.
+        """
         prev = GENESIS
+        count = 0
         try:
             for row in self.rows():
                 expected = _hash_row(row, prev)
                 if row.get("row_hash") != expected:
                     return False
                 prev = str(row["row_hash"])
+                count += 1
         except LedgerError:
+            return False
+
+        head = self._read_head()
+        if head is None:
+            # No checkpoint: only an empty ledger can be trusted as intact.
+            return count == 0
+        try:
+            head_count = int(head.get("count"))
+        except (TypeError, ValueError):
+            return False
+        if count != head_count or str(head.get("last_hash") or "") != prev:
             return False
         return True
 
@@ -124,6 +173,7 @@ class Ledger:
             handle.write(line)
             handle.flush()
             os.fsync(handle.fileno())
+        self._write_head(self._row_count(), str(row["row_hash"]))
         return row
 
     def record_crossing(self, *, lane: str, agent: str, scenario: str,

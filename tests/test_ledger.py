@@ -141,3 +141,47 @@ def test_malformed_line_raises_rather_than_being_skipped(tmp_path):
     with pytest.raises(LedgerError):
         list(led.rows())
     assert led.verify_chain() is False
+
+
+def test_tail_truncation_is_detected(tmp_path):
+    """A hash chain alone leaves tail truncation valid: dropping recent rows
+    yields a shorter but self-consistent chain, letting an actor delete its
+    own failures and recover trust. The head checkpoint closes that.
+
+    Regression guard for a hole found by the C5 randomised property test.
+    """
+    led = Ledger(tmp_path / "l.jsonl")
+    for i in range(6):
+        _cross(led, i)
+        _grade(led, i, "failure" if i > 3 else "success")
+    assert led.verify_chain() is True
+
+    lines = led.path.read_text().splitlines()
+    led.path.write_text("\n".join(lines[:-4]) + "\n")   # delete recent failures
+    assert led.verify_chain() is False
+
+
+def test_rewind_and_head_removal_both_fail_closed(tmp_path):
+    led = Ledger(tmp_path / "l.jsonl")
+    for i in range(4):
+        _cross(led, i)
+    assert led.verify_chain() is True
+
+    # head deleted on a non-empty ledger -> cannot prove intactness
+    led.head_path.unlink()
+    assert led.verify_chain() is False
+
+    # head present but stale (points at an older count) -> mismatch
+    led2 = Ledger(tmp_path / "m.jsonl")
+    for i in range(3):
+        _cross(led2, i)
+    stale = json.loads(led2.head_path.read_text())
+    stale["count"] = stale["count"] - 1
+    led2.head_path.write_text(json.dumps(stale))
+    assert led2.verify_chain() is False
+
+
+def test_empty_ledger_without_head_is_still_valid(tmp_path):
+    led = Ledger(tmp_path / "fresh.jsonl")
+    assert led.verify_chain() is True
+    assert led.trust("any_lane")["status"] == "unknown"
