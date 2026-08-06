@@ -45,6 +45,23 @@ from evidence instead of being granted it by assertion.
    peer to perform it. This is what makes an inter-agent mesh safe: agents
    exchange **evidence** (trust records, divergence reports), not permissions.
 
+## Bootstrap: scope before authority
+
+On install, DRGB's first job is to learn the shape of its environment — and it
+looks for **existing graphs first** rather than re-deriving the world:
+
+1. **Discover** second-brain / graph artifacts already on the host
+   (`graphify-out/graph.json`, manifests, memory stores).
+2. **Adopt** them as the scope map: lanes, hosts, services, blast radius.
+   No graph found is *reported*, never assumed empty.
+3. **Grow** its own namespaced subgraph (`drgb:lane`, `drgb:crossing`,
+   `drgb:trust`, `drgb:divergence`) — write-isolated, never editing the
+   host's graph files.
+4. **Sync upward** by export, on the host's own terms.
+
+**A lane whose blast radius is unmapped cannot earn a ceiling above 0.0.**
+Scope understanding is a prerequisite for authority, not a nicety.
+
 ## Status
 
 Phase 2 of `operator-brain/docs/superpowers/specs/DRGB_WORK_QUEUE.md`.
