@@ -1,0 +1,135 @@
+# Authority envelope — VPS Hermes (FLEET-WIDE lead orchestrator).
+#
+# Derived from the read-only reach inventory of 2026-08-06
+# (operator-brain/docs/superpowers/specs/2026-08-06-vps-hermes-reach-inventory.md).
+#
+# This agent runs as root on a host carrying money paths, public web surface,
+# eight provider keys, three SSH identities and its own self-update timer. It
+# therefore gets the STRICTEST envelope in the fleet:
+#
+#   * every ceiling is 0.0 — observe-only, no exceptions;
+#   * one lane per DOMAIN; trust earned in one domain grants nothing in another;
+#   * min_crossings is deliberately high (50-100) because the blast radius is
+#     the machine and everything it can reach;
+#   * lanes whose internals were NOT surveyed are marked unmapped and are
+#     ceiling-ineligible until they are (Phase 0 rule: no scope, no authority);
+#   * self_update, credential access and peer-authority grants are irreversible
+#     on EVERY lane — they are never earnable at any evidence level.
+#
+# CRITICAL DEPLOYMENT NOTE: this agent can rewrite its own code (uid 0 +
+# hermes-keep-updated.timer). A LOCAL ledger head is therefore insufficient
+# here — its evidence store must be remote/append-only or peer-replicated
+# before any ceiling above 0.0 is even proposed. See the README "Known limit".
+
+lanes:
+
+  host_control:
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {uid: 0, blast_radius: entire_vps}
+    irreversible_actions:
+      [service_enable, service_disable, service_mask, service_restart,
+       vps_destroy, vps_recreate, snapshot_restore, self_update,
+       credential_read, credential_write, envelope_edit, grant_authority]
+
+  container_control:
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {containers_observed: 12}
+    irreversible_actions:
+      [container_destroy, container_rebuild, container_env_read, image_pull,
+       self_update, credential_read, envelope_edit, grant_authority]
+
+  trading_adjacent:          # haveno-agent, harvest, Casey's daemon stack
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    out_of_sample_required: true
+    limits: {money_touching: true, accounts: [derek, casey]}
+    irreversible_actions:
+      [order_placement, order_amend, order_cancel_and_replace, withdrawal,
+       offer_publish, settlement_action, key_rotation, self_update,
+       credential_read, envelope_edit, grant_authority]
+
+  cross_host:                # 3 SSH identities, 16 known hosts, Mac delegate
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {ssh_identities: 3, known_hosts: 16, boundary: beyond_this_vps}
+    irreversible_actions:
+      [remote_execute, remote_service_control, remote_file_write, key_rotation,
+       self_update, credential_read, envelope_edit, grant_authority]
+
+  model_api_spend:           # 8 provider keys, no per-lane budget today
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 50
+    limits: {providers: 8, budget_per_lane: unset}
+    irreversible_actions:
+      [credential_read, credential_write, key_rotation, self_update,
+       envelope_edit, grant_authority]
+
+  public_web:                # 12 published ports, customer-visible
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {published_ports: 12, customer_visible: true}
+    irreversible_actions:
+      [deploy, dns_change, tls_change, site_publish, container_rebuild,
+       self_update, credential_read, envelope_edit, grant_authority]
+
+  business_ops:              # financial-os family — INTERNALS NOT SURVEYED
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {blast_radius: unmapped, survey: pending}
+    irreversible_actions:
+      [record_write, notification_send, intake_process, backup_restore,
+       self_update, credential_read, envelope_edit, grant_authority]
+
+  repo_filesystem:
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 50
+    limits: {write_paths: none, protected: ["/root/backups", "/root/git", "/root/data"]}
+    irreversible_actions:
+      [force_push, history_rewrite, backup_delete, file_delete, self_update,
+       credential_read, envelope_edit, grant_authority]
+
+  agent_orchestration:       # relay bridges, minions, model-slots, cockpit
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {may_grant_authority_to_peers: false, cross_host_tasking: forbidden}
+    irreversible_actions:
+      [grant_authority, task_remote_agent, agent_spawn, agent_stop,
+       self_update, credential_read, envelope_edit]
+
+  memory_knowledge:          # agentmemory, graphify-brain — the second brain
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 100
+    limits: {host_graph_write: forbidden}
+    irreversible_actions:
+      [graph_write, memory_delete, memory_rewrite, self_update,
+       credential_read, envelope_edit, grant_authority]
+
+  self_update:               # exists ONLY so the action is nameable and barred
+    scenarios_preapproved: []
+    ceiling: 0.0
+    min_crossings: 1000
+    limits: {note: "never earnable; listed so audits see it explicitly"}
+    irreversible_actions:
+      [self_update, code_replace, restart_self, credential_read,
+       envelope_edit, grant_authority]
+
+  fleet_telemetry:
+    scenarios_preapproved: [observe]
+    ceiling: 0.0
+    min_crossings: 50
+    limits: {outbound: local_only}
+    irreversible_actions:
+      [outbound_message, heartbeat_forge, self_update, credential_read,
+       envelope_edit, grant_authority]
