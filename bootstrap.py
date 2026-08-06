@@ -29,6 +29,7 @@ from drgb.envelope import load_envelope
 from drgb.interview import Interview, build_questions
 from drgb.ledger import Ledger
 from drgb.preflight import run_preflight
+from drgb.provision import provision
 from drgb.scope import build_scope
 from observe.adapters import SystemdTimerAdapter, poll_all
 
@@ -99,9 +100,16 @@ def main() -> dict:
         "note": ("install proceeds with safe defaults for anything unanswered; "
                  "answer later with --answer key=value and re-run"),
     }
+    # 5. answers BECOME configuration — otherwise the interview is theatre
+    generated = provision(scope=scope, answers=interview.resolved(),
+                          out_path=STATE / "envelope.generated.yaml",
+                          agent=args.agent, now=now)
+    record["generated_envelope"] = str(generated)
+    print(f"\n5/6 generated envelope -> {generated} (every ceiling 0.0)")
+
     (STATE / "install_record.json").write_text(json.dumps(record, indent=2,
                                                           sort_keys=True))
-    print(f"\n5/5 install record -> {STATE / 'install_record.json'}")
+    print(f"6/6 install record -> {STATE / 'install_record.json'}")
     if defaulted:
         print(f"    DEFAULTED (unanswered): {', '.join(defaulted)}")
     return record
