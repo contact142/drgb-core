@@ -67,6 +67,21 @@ Stated plainly: DRGB can prove tampering to anyone who controls the evidence
 store. It cannot bind an actor who controls its own evidence store — the same
 reason auditors do not let the audited party hold the only copy of the books.
 
+## First install: study, then ask
+
+    venv/bin/python bootstrap.py
+
+Order is the point: **discover** existing graphs (adopt, never re-derive) ->
+**scope** lanes and blast radius -> **observe** which event sources actually
+answer -> **preflight** for anything that would silently stop evolution ->
+**interview** the operator with the few questions those findings provoked.
+
+Every question cites what was observed, lists its options, and states the
+consequence of each answer — questions that could not have been written in
+advance. Unanswered questions fall back to the RESTRICTIVE default and are
+reported as defaulted, so an install never hangs and never quietly assumes
+permission. Answer later with `--answer key=value` and re-run.
+
 ## Bootstrap: scope before authority
 
 On install, DRGB's first job is to learn the shape of its environment — and it
