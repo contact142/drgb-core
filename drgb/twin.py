@@ -203,6 +203,13 @@ class EventGate:
             and (now - self._last_evaluated_at) > self.max_interval_s
         )
 
+        # Bootstrap: with a threshold configured but no reference yet, there
+        # is no baseline to compare against. Having no basis to judge means
+        # EVALUATE, never skip (invariant 3 applied to the gate itself) —
+        # otherwise a threshold-only gate deadlocks and never fires at all.
+        needs_baseline = (self.threshold is not None and signal_value is not None
+                          and self._last_signal is None)
+
         threshold_breach = False
         if (self.threshold is not None and signal_value is not None
                 and self._last_signal is not None):
@@ -218,6 +225,8 @@ class EventGate:
             reason = "declared_event"
         elif threshold_breach:
             reason = "threshold_breach"
+        elif needs_baseline:
+            reason = "signal_baseline"
         else:
             return False, "not_event"
 
@@ -273,11 +282,19 @@ class TwinRunner:
         consolidation_threshold: int = 5,
         consolidation_backoff: int = 4,
         tolerance: float = 1e-9,
+        prediction_error_reengage: bool = False,
     ) -> None:
         if consolidation_threshold < 1:
             raise ValueError("consolidation_threshold must be >= 1")
         if consolidation_backoff < 1:
             raise ValueError("consolidation_backoff must be >= 1")
+        # Opt-in: only meaningful when the shadow emits a PERSISTENT
+        # expectation (a plan, setpoint or target) that should stay valid
+        # between firings. For a per-observation prediction of a moving
+        # signal, the last shadow value is stale by construction and this
+        # would force a fire every time — use the gate's threshold trigger
+        # (deviation of the signal itself) for those instead.
+        self.prediction_error_reengage = bool(prediction_error_reengage)
         if tolerance < 0:
             raise ValueError("tolerance must be >= 0")
 
@@ -369,7 +386,7 @@ class TwinRunner:
         principle that gates the twin in the first place (evaluate on
         surprise, coast otherwise).
         """
-        if live_value is None:
+        if not self.prediction_error_reengage or live_value is None:
             return False
         state = self._state_for(pattern_key)
         if state is None or state.last_shadow_value is None:

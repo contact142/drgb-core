@@ -212,7 +212,8 @@ def test_prediction_error_re_engages_a_consolidated_skill(monkeypatch):
     gate = EventGate(event_names=["tick"], max_interval_s=10_000.0,
                      clock=lambda: clock["t"])
     runner = TwinRunner(gate, shadow_fn=lambda obs: 1.0,
-                        consolidation_threshold=2, consolidation_backoff=50)
+                        consolidation_threshold=2, consolidation_backoff=50,
+                        prediction_error_reengage=True)
 
     for _ in range(3):
         clock["t"] += 1
@@ -235,7 +236,8 @@ def test_prediction_error_does_not_fire_without_a_live_value():
     gate = EventGate(event_names=["tick"], max_interval_s=10_000.0,
                      clock=lambda: clock["t"])
     runner = TwinRunner(gate, shadow_fn=lambda obs: 1.0,
-                        consolidation_threshold=2, consolidation_backoff=50)
+                        consolidation_threshold=2, consolidation_backoff=50,
+                        prediction_error_reengage=True)
     for _ in range(3):
         clock["t"] += 1
         runner.observe({"event": "tick"}, live_value=1.0, pattern_key="k")
