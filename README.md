@@ -45,6 +45,28 @@ from evidence instead of being granted it by assertion.
    peer to perform it. This is what makes an inter-agent mesh safe: agents
    exchange **evidence** (trust records, divergence reports), not permissions.
 
+## Known limit: evidence storage must outrank the observed process
+
+The guardian ledger is hash-chained and head-checkpointed, so mutation,
+reordering, interior deletion, replay, forged rows, and tail truncation are
+all detected. **But an actor with write access to BOTH the ledger and its
+head file can manufacture a consistent shorter history** — deleting its own
+failures and recomputing the checkpoint. This is asserted by
+`test_e2_head_forgery_is_the_known_limit_and_is_documented` so it can never
+be a surprise.
+
+The mitigation is deployment-level, not code-level, and any serious
+installation must choose one:
+
+1. keep the ledger/head on **append-only or remote storage** the observed
+   process cannot rewrite (the strongest option);
+2. **sign** head checkpoints with a key the observed process cannot read;
+3. **replicate** heads to a peer, so a rewound history disagrees with the mesh.
+
+Stated plainly: DRGB can prove tampering to anyone who controls the evidence
+store. It cannot bind an actor who controls its own evidence store — the same
+reason auditors do not let the audited party hold the only copy of the books.
+
 ## Bootstrap: scope before authority
 
 On install, DRGB's first job is to learn the shape of its environment — and it
