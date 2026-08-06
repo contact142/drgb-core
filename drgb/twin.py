@@ -247,11 +247,14 @@ class _PatternState:
     consecutive_agreements: int = 0
     consolidated: bool = False
     events_since_fire: int = 0
+    last_shadow_value: Any = None   # for prediction-error re-engagement
 
     def reset(self) -> None:
         self.consecutive_agreements = 0
         self.consolidated = False
         self.events_since_fire = 0
+        # last_shadow_value is deliberately retained: it is the reference a
+        # drifting live value is measured against after de-consolidation.
 
 
 class TwinRunner:
@@ -335,10 +338,15 @@ class TwinRunner:
             return None, None, _exception_text("comparison_error", exc)
 
     def _update_consolidation(self, pattern_key: str | None,
-                              diverged: bool | None) -> bool:
+                              diverged: bool | None,
+                              shadow_value: Any = None) -> bool:
         state = self._state_for(pattern_key, create=True)
         if state is None:
             return False
+        # Remember the latest shadow reading so a later live value can be
+        # checked for prediction error while the twin is backing off.
+        if shadow_value is not None:
+            state.last_shadow_value = shadow_value
 
         if diverged is False:
             state.consecutive_agreements += 1
@@ -352,12 +360,34 @@ class TwinRunner:
         state.reset()
         return False
 
-    def _should_skip(self, pattern_key: str | None, reason: str) -> bool:
+    def _prediction_error(self, pattern_key: str | None, live_value: Any) -> bool:
+        """True when the live value departs from this skill's last shadow value.
+
+        Consolidation lets the twin skip evaluations, which would otherwise
+        make a *drifting* skill invisible: divergence can only be measured on
+        a firing. Prediction error therefore forces a fire — the same
+        principle that gates the twin in the first place (evaluate on
+        surprise, coast otherwise).
+        """
+        if live_value is None:
+            return False
+        state = self._state_for(pattern_key)
+        if state is None or state.last_shadow_value is None:
+            return False
+        diverged, _delta, _err = self._compare(state.last_shadow_value,
+                                              live_value, True)
+        return bool(diverged)
+
+    def _should_skip(self, pattern_key: str | None, reason: str,
+                     live_value: Any = None) -> bool:
         state = self._state_for(pattern_key)
         if state is None or not state.consolidated:
             return False
         if reason in {"force", "heartbeat"}:
             return False
+        if self._prediction_error(pattern_key, live_value):
+            state.events_since_fire = 0
+            return False  # surprise re-engages the twin immediately
 
         state.events_since_fire += 1
         if state.events_since_fire < self.consolidation_backoff:
@@ -442,7 +472,7 @@ class TwinRunner:
             )
 
         try:
-            if self._should_skip(pattern_key, reason):
+            if self._should_skip(pattern_key, reason, live_value):
                 self._skipped += 1
                 return TwinResult(
                     fired=False,
@@ -496,7 +526,8 @@ class TwinRunner:
             self._errors += 1
 
         try:
-            consolidated = self._update_consolidation(pattern_key, diverged)
+            consolidated = self._update_consolidation(pattern_key, diverged,
+                                                      shadow_value)
         except Exception as exc:
             self._errors += 1
             error = _append_error(error, _exception_text("consolidation_error", exc))

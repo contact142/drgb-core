@@ -198,3 +198,47 @@ def test_ledger_failure_is_contained_and_recorded():
     assert result.fired is True
     assert result.error is not None and "ledger unavailable" in result.error
     assert runner.metrics()["errors"] == 1
+
+
+def test_prediction_error_re_engages_a_consolidated_skill(monkeypatch):
+    """Consolidation lets the twin skip; a drifting live value must pull it
+    straight back. Without this, a consolidated skill can drift invisibly
+    because divergence is only measurable on a firing.
+
+    Regression guard for a hole found by adversarial probe.
+    """
+    clock = {"t": 0.0}
+
+    gate = EventGate(event_names=["tick"], max_interval_s=10_000.0,
+                     clock=lambda: clock["t"])
+    runner = TwinRunner(gate, shadow_fn=lambda obs: 1.0,
+                        consolidation_threshold=2, consolidation_backoff=50)
+
+    for _ in range(3):
+        clock["t"] += 1
+        runner.observe({"event": "tick"}, live_value=1.0, pattern_key="k")
+    assert runner.consolidation_state()["k"]["consolidated"] is True
+
+    clock["t"] += 1
+    quiet = runner.observe({"event": "tick"}, live_value=1.0, pattern_key="k")
+    assert quiet.fired is False and quiet.reason == "consolidated_backoff"
+
+    clock["t"] += 1
+    surprised = runner.observe({"event": "tick"}, live_value=99.0, pattern_key="k")
+    assert surprised.fired is True, "prediction error must re-engage the twin"
+    assert surprised.diverged is True
+    assert runner.consolidation_state()["k"]["consolidated"] is False
+
+
+def test_prediction_error_does_not_fire_without_a_live_value():
+    clock = {"t": 0.0}
+    gate = EventGate(event_names=["tick"], max_interval_s=10_000.0,
+                     clock=lambda: clock["t"])
+    runner = TwinRunner(gate, shadow_fn=lambda obs: 1.0,
+                        consolidation_threshold=2, consolidation_backoff=50)
+    for _ in range(3):
+        clock["t"] += 1
+        runner.observe({"event": "tick"}, live_value=1.0, pattern_key="k")
+    clock["t"] += 1
+    blind = runner.observe({"event": "tick"}, pattern_key="k")
+    assert blind.fired is False and blind.reason == "consolidated_backoff"
