@@ -21,6 +21,7 @@ from drgb.bridge import request_crossing
 from drgb.cadence import CadenceLearner
 from drgb.envelope import load_envelope
 from drgb.ledger import Ledger
+from drgb.mesh import MeshView, publish
 from drgb.outcomes import OutcomeGrader
 from observe.ssh_adapter import RemoteProbe, SshObserveAdapter
 
@@ -112,6 +113,31 @@ def main() -> dict:
 
     summary["failed_units"] = failed_units
     baselines_path.write_text(json.dumps(grader.baselines, indent=2))
+    # --- mesh: publish our evidence, ingest peers', alert on disagreement ---
+    mesh_dir = Path.home() / ".drgb" / "mesh"
+    mesh_dir.mkdir(parents=True, exist_ok=True)
+    document = publish(ledger, envelope, AGENT, list(PROBES), now=now)
+    (mesh_dir / f"{AGENT}.json").write_text(
+        json.dumps(document.to_dict(), indent=2, sort_keys=True))
+
+    view = MeshView(store=STATE / "mesh_view.json")
+    mesh_alerts = []
+    for peer_doc in sorted(mesh_dir.glob("*.json")):
+        if peer_doc.stem == AGENT:
+            continue                      # a peer cannot vouch for itself
+        try:
+            alert = view.ingest(json.loads(peer_doc.read_text()))
+        except Exception as exc:          # a bad peer document is an alert
+            alert = {"agent": peer_doc.stem, "kind": "peer_document_rejected",
+                     "detail": str(exc)[:120]}
+            view.alerts.append(alert)
+        if alert:
+            mesh_alerts.append(alert)
+    summary["mesh"] = {"published_lanes": len(document.lanes),
+                       "peers_seen": len(view.peers()),
+                       "alerts": mesh_alerts,
+                       "total_alerts": len(view.alerts)}
+
     summary["ledger_intact"] = ledger.verify_chain()
     summary["envelope_intact"] = envelope.verify_integrity()
     summary["evidence_store"] = "local_to_observer_not_reachable_by_observed_host"
