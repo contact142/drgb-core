@@ -38,6 +38,12 @@ from evidence instead of being granted it by assertion.
 4. **Evidence before authority.** Promotion requires a pre-registered sample
    size and an out-of-sample window.
 5. **Failure imposes cooldown.**
+6. **No authority laundering.** A request that crosses from one agent to
+   another executes under the **requester's** envelope, never the executor's.
+   Every ledger row records `originating_agent` and `originating_envelope_digest`,
+   so a low-authority agent cannot obtain an outcome by asking a high-authority
+   peer to perform it. This is what makes an inter-agent mesh safe: agents
+   exchange **evidence** (trust records, divergence reports), not permissions.
 
 ## Status
 
