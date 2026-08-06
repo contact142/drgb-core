@@ -1,0 +1,89 @@
+# Authority envelope — LOCAL Hermes / Prometheus host (Ubuntu).
+#
+# Derek's model: authority is PRE-APPROVED BY SCENARIO in advance. DRGB is how
+# a lane earns its way UP TO the ceiling set here. Nothing in the running
+# process may raise a ceiling; edits happen out-of-process and are detected.
+#
+# EVERY ceiling starts at 0.0 — observe-only. Phase 4.2 runs this envelope
+# against real Hermes lanes and must prove zero behaviour change before any
+# non-zero ceiling is even proposed (and proposing is Derek's decision).
+#
+# Lanes are DOMAIN-scoped, not per-timer: authority earned in one domain must
+# never leak into another.
+
+lanes:
+
+  # --- research / R&D ------------------------------------------------------
+  research_readonly:
+    scenarios_preapproved: [observe, replay, backtest, report]
+    ceiling: 0.0
+    min_crossings: 20
+    out_of_sample_required: true
+    limits:
+      writes_outside: none
+      network: public_data_only
+    irreversible_actions:
+      [order_placement, withdrawal, key_rotation, envelope_edit,
+       service_enable, service_disable, dns_change, outbound_message]
+
+  # --- paper trading lanes (no live route by construction) -----------------
+  paper_trading:
+    scenarios_preapproved: [observe, paper_entry, paper_exit, autopsy]
+    ceiling: 0.0
+    min_crossings: 30
+    out_of_sample_required: true
+    limits:
+      real_orders: forbidden
+      accounts: paper_only
+    irreversible_actions:
+      [order_placement, withdrawal, key_rotation, envelope_edit,
+       service_enable, service_disable, outbound_message]
+
+  # --- monitoring / watchdogs ---------------------------------------------
+  monitoring:
+    scenarios_preapproved: [observe, report, alert_local]
+    ceiling: 0.0
+    min_crossings: 20
+    limits:
+      restart_services: forbidden
+      alerting: local_log_only
+    irreversible_actions:
+      [service_enable, service_disable, service_restart, envelope_edit,
+       outbound_message, key_rotation]
+
+  # --- shadow proposers (ceiling-sell, TimesFM bands) ----------------------
+  shadow_proposals:
+    scenarios_preapproved: [observe, propose]
+    ceiling: 0.0
+    min_crossings: 40          # a proposal lane must build a long record
+    out_of_sample_required: true
+    limits:
+      may_place_orders: false
+      proposals_are_advisory: true
+    irreversible_actions:
+      [order_placement, order_amend, withdrawal, envelope_edit,
+       key_rotation, outbound_message]
+
+  # --- repository / file writes -------------------------------------------
+  repo_write:
+    scenarios_preapproved: [observe, read]
+    ceiling: 0.0
+    min_crossings: 20
+    limits:
+      write_paths: none
+      protected_paths: [".git", "config", "data"]
+    irreversible_actions:
+      [force_push, history_rewrite, branch_delete, envelope_edit,
+       credential_write, service_enable, service_disable]
+
+  # --- agent orchestration -------------------------------------------------
+  agent_orchestration:
+    scenarios_preapproved: [observe, brief, summarise]
+    ceiling: 0.0
+    min_crossings: 30
+    limits:
+      may_grant_authority_to_peers: false   # invariant 6: no laundering
+      cross_host_commands: forbidden
+    irreversible_actions:
+      [grant_authority, envelope_edit, service_enable, service_disable,
+       remote_execute, key_rotation, outbound_message]
