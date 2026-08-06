@@ -186,3 +186,29 @@ def test_empty_ledger_without_head_is_still_valid(tmp_path):
     led = Ledger(tmp_path / "fresh.jsonl")
     assert led.verify_chain() is True
     assert led.trust("any_lane")["status"] == "unknown"
+
+
+def test_regrading_one_crossing_cannot_inflate_evidence(tmp_path):
+    """Authority-earning bypass: re-grading a single crossing N times must not
+    satisfy a min_crossings threshold. Evidence counts CROSSINGS, not rows."""
+    led = Ledger(tmp_path / "l.jsonl")
+    _cross(led, 0)
+    for _ in range(10):
+        _grade(led, 0, "success")
+    trust = led.trust("lane_a", originating_agent="hermes_local")
+    assert trust["n_graded"] == 1, "one crossing must count once"
+    assert trust["grade_rows"] == 10   # rows still visible for audit
+    assert led.verify_chain() is True
+
+
+def test_a_failure_cannot_be_whitewashed_by_regrading(tmp_path):
+    """A later 'success' row is a correction that may add doubt, never remove
+    it: the worst outcome recorded for a crossing is the one that counts."""
+    led = Ledger(tmp_path / "l.jsonl")
+    _cross(led, 0)
+    _grade(led, 0, "failure")
+    _grade(led, 0, "success")
+    _grade(led, 0, "success")
+    trust = led.trust("lane_a", originating_agent="hermes_local")
+    assert trust["failures"] == 1 and trust["successes"] == 0
+    assert trust["in_cooldown"] is True

@@ -231,8 +231,28 @@ class Ledger:
             return base
         graded.sort(key=lambda r: float(r["ts"]))
         last_ts = float(graded[-1]["ts"])
-        successes = sum(1 for r in graded if r.get("outcome") == "success")
-        failures = sum(1 for r in graded if r.get("outcome") == "failure")
+
+        # Collapse grades to ONE outcome per crossing. Two attacks otherwise:
+        #   * inflation  — re-grading a single crossing N times satisfies a
+        #     min_crossings threshold without doing the work;
+        #   * whitewash  — re-grading a failure as success to erase it.
+        # The kept outcome is the WORST ever recorded for that crossing
+        # (failure > neutral > success): history is append-only, so a later
+        # row is a correction that may add doubt, never remove it.
+        severity = {"failure": 2, "neutral": 1, "success": 0}
+        per_crossing: dict[str, dict[str, Any]] = {}
+        for row in graded:
+            cid = str(row.get("crossing_id") or f"__row:{row.get('row_hash')}")
+            outcome = str(row.get("outcome") or "neutral")
+            current = per_crossing.get(cid)
+            if current is None or severity.get(outcome, 1) > severity.get(
+                    str(current.get("outcome") or "neutral"), 1):
+                per_crossing[cid] = row
+        distinct = list(per_crossing.values())
+        distinct.sort(key=lambda r: float(r["ts"]))
+
+        successes = sum(1 for r in distinct if r.get("outcome") == "success")
+        failures = sum(1 for r in distinct if r.get("outcome") == "failure")
         last_failure = next((float(r["ts"]) for r in reversed(graded)
                              if r.get("outcome") == "failure"), None)
         cooldown_until = (last_failure + self.cooldown_s) if last_failure else None
@@ -241,7 +261,8 @@ class Ledger:
         decided = successes + failures
         out = {
             "lane": lane, "originating_agent": originating_agent,
-            "n_graded": len(graded), "successes": successes, "failures": failures,
+            "n_graded": len(distinct), "grade_rows": len(graded),
+            "successes": successes, "failures": failures,
             "win_rate": (successes / decided) if decided else None,
             "last_graded_ts": last_ts,
             "cooldown_until": cooldown_until, "in_cooldown": in_cooldown,
