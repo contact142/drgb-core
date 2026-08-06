@@ -19,6 +19,7 @@ from drgb.bridge import request_crossing
 from drgb.cadence import CadenceLearner
 from drgb.envelope import load_envelope
 from drgb.ledger import Ledger
+from drgb.braid import Braid
 from drgb.mesh import MeshView, publish
 from drgb.subgraph import Subgraph
 from observe.adapters import JsonlLogAdapter, SystemdTimerAdapter, poll_all
@@ -119,6 +120,28 @@ def main() -> dict:
                        "peers_seen": len(view.peers()),
                        "alerts": mesh_alerts,
                        "total_alerts": len(view.alerts)}
+
+    # --- braid: contribute our knowledge, read everyone's, brief ---------
+    braid_dir = Path.home() / ".drgb" / "braid"
+    braid_dir.mkdir(parents=True, exist_ok=True)
+    contribution = {
+        "producer": "drgb", "namespace": "drgb", "agent": AGENT,
+        "published_at": now, "envelope_digest": envelope.digest,
+        "nodes": [{"id": f"drgb:lane:{lane}", "agent": AGENT,
+                   "observed": bool(row.get("observed", row.get("available"))),
+                   "last_seen": now}
+                  for lane, row in summary["lanes"].items()],
+    }
+    (braid_dir / f"{AGENT}.json").write_text(json.dumps(contribution, indent=2,
+                                                        sort_keys=True))
+    braid = Braid()
+    braid.contribute_all(braid_dir)
+    brief = braid.briefing(now=now)
+    braid.export(STATE / "braid.json", now=now)
+    summary["braid"] = {"agents": brief["agents"], "nodes": brief["nodes"],
+                        "conflicts": brief["conflict_count"],
+                        "rejected": brief["rejected_count"],
+                        "silence_seconds": brief["silence_seconds"]}
 
     summary["ledger_intact"] = ledger.verify_chain()
     summary["envelope_intact"] = envelope.verify_integrity()
