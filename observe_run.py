@@ -152,6 +152,9 @@ def main() -> dict:
     (STATE / "last_cycle.json").write_text(json.dumps(summary, indent=2))
     with (STATE / "cycles.jsonl").open("a") as handle:
         handle.write(json.dumps(summary) + "\n")
+    # Consolidate only the completed observer artifact and still grant no authority.
+    from write_coordination_status import main as write_coordination_status
+    write_coordination_status()
     print(json.dumps({k: v for k, v in summary.items() if k != "lanes"},
                      indent=2))
     for lane, row in summary["lanes"].items():
